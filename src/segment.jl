@@ -11,7 +11,6 @@ function segment_cells(img::AxisArray{T, 4},
     tax = timeaxis(img)
     segments = Array{SegmentedImage{Array{Int64,2},Float32}}(undef, length(tax))
     ylen, xlen = size(img, Axis{:y}), size(img, Axis{:x})
-    markers = zeros(Int, ylen, xlen)
     mask = Array{Bool}(undef, ylen, xlen)
     segslice = Array{T}(undef, ylen, xlen)
     seedslice = Array{T}(undef, ylen, xlen)
@@ -29,13 +28,13 @@ function segment_cells(img::AxisArray{T, 4},
         # throw out seeds that are outside of segment areas
         seeds .&= (segslice .> 0.0)
         ImageMorphology.closing!(seeds)
-        ImageMorphology.label_components!(markers, seeds, 1:ndims(seeds));
+        markers = Images.label_components(seeds)
         
         # compute mask
         mask .= maskfunc(segslice)
         ImageMorphology.closing!(mask)
         
-        segments[idx] = watershed(1 .- imadjustintensity(segslice), markers, compactness=0.01, mask=mask)
+        segments[idx] = watershed(1 .- imadjustintensity(segslice), markers, mask=mask)
     end
     segments
 end
