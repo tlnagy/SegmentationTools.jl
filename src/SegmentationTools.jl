@@ -6,6 +6,7 @@ using Images
 using ImageAxes
 using ImageSegmentation
 using ImageMorphology
+using ImageMetadata
 using Statistics
 using Colors
 

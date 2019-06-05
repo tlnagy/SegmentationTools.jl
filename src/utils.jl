@@ -17,3 +17,30 @@ function flatfield(img::AxisArray{T, 3}) where {T}
     end
     med
 end
+
+"""
+	flatfield_correct(img, axis, darkfield, flatfield)
+
+Flatfield correct `img`. This function subtracts the darkfield, clamps the output
+to positive values, divides by the flatfield, and then rescales and rebuilds the
+original image perserving the properties and axes.
+
+For example, to correct along the DAPI channel:
+
+```
+flatfield_correct(img[Axis{:channel}(:EPI_DAPI)], darkfield, flatfield_dapi)
+```
+"""
+function flatfield_correct(img::AxisArray{T1, N},
+                           darkfield::AbstractArray{T2, 2},
+                           flatfield::AbstractArray{T3, 2}) where {T1, T2, T3, N}
+    out = T1.(imadjustintensity(clamp01.(Float32.(arraydata(img) .- darkfield))./flatfield))
+    AxisArray(out, img.axes)
+end
+
+function flatfield_correct(img::ImageMeta{T, N},
+                           darkfield,
+                           flatfield) where {T, N}
+    out = flatfield_correct(img.data, darkfield, flatfield)
+    copyproperties(img, out)
+end
