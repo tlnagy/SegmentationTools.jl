@@ -44,3 +44,32 @@ function flatfield_correct(img::ImageMeta{T, N},
     out = flatfield_correct(img.data, darkfield, flatfield)
     copyproperties(img, out)
 end
+
+get_background_means(img::AxisArray, seeds::BitArray{3}) = get_background_means(img, AxisArray(seeds, img.axes))
+
+"""
+    get_background_means(img, seeds, dist)
+
+Computes the average signal of the background area, which is defined as areas in `img`
+that are a distance `dist` away from the true values in `seeds` for each slice in time.
+
+
+### Example:
+
+a = img[Axis{:position}(2), Axis{:channel}(:EPI_mNG)].data
+b = img[Axis{:position}(2), Axis{:channel}(:EPI_BFP)].data .> 0.01
+get_background_means(a, b)
+"""
+function get_background_means(img::AxisArray{T1, 3},
+                              seeds::AxisArray{T2, 3};
+                              dist::Int = 30) where {T1, T2 <: Bool}
+    n = length(timeaxis(img))
+    (n != length(timeaxis(seeds))) && error("The time dimensions of both arrays need to the same")
+    bkg_means = Array{T1}(undef, n)
+    for i in 1:n
+        seed_slice = seeds[Axis{:time}(i)]
+        bkg_mask = distance_transform(feature_transform(seed_slice)) .> dist
+        bkg_means[i] = mean(img[Axis{:time}(i)][bkg_mask])
+    end
+    bkg_means
+end
