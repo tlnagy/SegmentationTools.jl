@@ -2,7 +2,6 @@ module SegmentationTools
 
 using DataFrames
 using AxisArrays
-using Images
 using ImageAxes
 using ImageSegmentation
 using ImageMorphology
