@@ -8,6 +8,7 @@ using ImageMorphology
 using ImageMetadata
 using Statistics
 using Colors
+using FreeTypeAbstraction
 
 include("utils.jl")
 include("segment.jl")

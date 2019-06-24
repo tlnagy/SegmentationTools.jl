@@ -2,8 +2,8 @@
     flatfield(img)
 
 Compute the flatfield image from `img` by calculating the median value
-along the 3rd dimension which normally corresponds to different 
-positions. This way the contribution of the optical path can be 
+along the 3rd dimension which normally corresponds to different
+positions. This way the contribution of the optical path can be
 determined. Requires an `img` with labeled dimensions `x` and `y`, order
 does not matter.
 """
