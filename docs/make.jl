@@ -5,3 +5,6 @@ using Documenter, SegmentationTools
 
 makedocs(sitename="SegmentationTools.jl")
 
+deploydocs(
+    repo = "github.com/tlnagy/SegmentationTools.jl.git",
+)
