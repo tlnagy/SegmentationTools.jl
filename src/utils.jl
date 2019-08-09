@@ -45,31 +45,67 @@ function flatfield_correct(img::ImageMeta{T, N},
     copyproperties(img, out)
 end
 
-get_background_means(img::AxisArray, seeds::BitArray{3}) = get_background_means(img, AxisArray(seeds, img.axes))
+light_source_contrib(img::AxisArray, seeds::BitArray{3}) = light_source_contrib(img, AxisArray(seeds, img.axes))
 
 """
-    get_background_means(img, seeds, dist)
+    light_source_contrib(img, seeds, dist, h)
 
-Computes the average signal of the background area, which is defined as areas in `img`
-that are a distance `dist` away from the true values in `seeds` for each slice in time.
+Computes the contribution of the light source fluctuations for each time point by first
+identifying background pixels by finding pixels that are more than `dist` away from true
+values in `seed`. A kernel density estimate is then fit to the background pixels to get
+a continuous distribution and then [`find_peak_center`](@ref) for more details how the "center" is defined. 
+
+### Rationale
+
+Certain light sources, especially arc lamps, exhibit substantial variance in 
+total brightness in time. Additionally, the background signal is dependent on the total
+light delivered and we can use that to identify the arc lamp wander. 
 
 
 ### Example:
 
+```julia
 a = img[Axis{:position}(2), Axis{:channel}(:EPI_mNG)].data
 b = img[Axis{:position}(2), Axis{:channel}(:EPI_BFP)].data .> 0.01
-get_background_means(a, b)
+SegmentationTools.light_source_contrib(a, b)
+```
 """
-function get_background_means(img::AxisArray{T1, 3},
+function light_source_contrib(img::AxisArray{T1, 3},
                               seeds::AxisArray{T2, 3};
                               dist::Int = 30) where {T1, T2 <: Bool}
     n = length(timeaxis(img))
     (n != length(timeaxis(seeds))) && error("The time dimensions of both arrays need to the same")
-    bkg_means = Array{T1}(undef, n)
+    bkg_means = Array{Float64}(undef, n)
     for i in 1:n
         seed_slice = seeds[Axis{:time}(i)]
         bkg_mask = distance_transform(feature_transform(seed_slice)) .> dist
-        bkg_means[i] = mean(img[Axis{:time}(i)][bkg_mask])
+        # fit a kernel density estimate to the background pixels
+        fitted_kde = kde(vec(Float64.(img[Axis{:time}(i)][bkg_mask])))
+        # find the center of the KDE of the background peak
+        bkg_means[i] = find_peak_center(collect(fitted_kde.x), fitted_kde.density)
     end
     bkg_means
+end
+
+"""
+    find_peak_center(x, y, h)
+
+Given two equal length arrays, `x`, and `y`, computes the half width 
+at `h` relative to the maximum of the peak in `y`, i.e. for `h=0.5`, this 
+function returns the value of `x` that corresponds to the half-width 
+half-max. This is a robust method for identifying the center of a peak.
+"""
+function find_peak_center(x::Vector{Float64}, y::Vector{Float64}; h::Float64=0.75)
+    (length(x) != length(y)) && throw(DimensionMismatch("x and y have to have equal lengths"))
+    # value at which we cut the peak
+    cutoff = maximum(y)*h
+    
+    # find the indices where we "enter" and "exit" the peak
+    transitions = findall(i-> i != 0, diff(y .> cutoff))
+    (length(transitions) != 2) && error("Dependent variable is not unimodal")
+
+    # translate from indices to the original units of `slice`
+    low = x[transitions[1] + 1]
+    high = x[transitions[2]]
+    low + (high - low) / 2
 end

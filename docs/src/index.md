@@ -46,6 +46,7 @@ SegmentationTools.create_cell_grid
 ## Miscellaneous
 
 ```@docs
+SegmentationTools.find_peak_center
+SegmentationTools.light_source_contrib
 SegmentationTools.flatfield_correct
-SegmentationTools.get_background_means
 ```

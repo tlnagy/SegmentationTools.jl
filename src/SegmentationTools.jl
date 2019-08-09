@@ -9,6 +9,8 @@ using ImageMetadata
 using Statistics
 using Colors
 using FreeTypeAbstraction
+using Images
+using KernelDensity
 
 include("utils.jl")
 include("segment.jl")
