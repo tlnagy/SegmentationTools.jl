@@ -1,10 +1,8 @@
 """
-r   create_cell_grid(img, tracks; win) -> grid
+    create_cell_grid(img, tracks; win) -> grid
 
 Given a xyt image and set of tracks, creates a grid of all tracked cells with the cells centered
 in their grid location. Helps to quickly diagnose weird cell segmentation behavior.
-
-
 """
 function create_cell_grid(img::AbstractArray{T, 3}, tracks::AbstractArray{S, 1}; win=30) where {T, S <: SubDataFrame}
     n_tracks = length(tracks)

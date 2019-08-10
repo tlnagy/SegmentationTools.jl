@@ -45,21 +45,32 @@ function flatfield_correct(img::ImageMeta{T, N},
     copyproperties(img, out)
 end
 
-light_source_contrib(img::AxisArray, seeds::BitArray{3}) = light_source_contrib(img, AxisArray(seeds, img.axes))
+light_source_contrib(img::AxisArray, seeds::BitArray{3}; dist::Int=30, h::Float64=0.9) = 
+    light_source_contrib(img, AxisArray(seeds, img.axes); dist=dist, h=h)
 
 """
     light_source_contrib(img, seeds, dist, h)
 
 Computes the contribution of the light source fluctuations for each time point by first
 identifying background pixels by finding pixels that are more than `dist` away from true
-values in `seed`. A kernel density estimate is then fit to the background pixels to get
-a continuous distribution and then [`find_peak_center`](@ref) for more details how the "center" is defined. 
+values in `seeds`. A kernel density estimate is then fit to the background pixels to get
+a continuous distribution and then [`find_peak_center`](@ref) is used to identify the
+"average" response of a background pixel.
+
+!!! note
+
+    The distribution of background pixels often ends up being quite non-normal, likely due
+    to misidentification. Empirically, I've found the finding the center of the kernel 
+    density estimate to be more robust than simpler statistics like mean, median, or even
+    the maximum value of the KDE.
 
 ### Rationale
 
 Certain light sources, especially arc lamps, exhibit substantial variance in 
 total brightness in time. Additionally, the background signal is dependent on the total
-light delivered and we can use that to identify the arc lamp wander. 
+light delivered and we can use that to identify the arc lamp wander and subtract it
+from the whole field of view at each timestep. This gives us more stable total
+fluorescence values over time.
 
 
 ### Example:
@@ -72,7 +83,8 @@ SegmentationTools.light_source_contrib(a, b)
 """
 function light_source_contrib(img::AxisArray{T1, 3},
                               seeds::AxisArray{T2, 3};
-                              dist::Int = 30) where {T1, T2 <: Bool}
+                              dist::Int = 30,
+                              h::Float64 = 0.9) where {T1, T2 <: Bool}
     n = length(timeaxis(img))
     (n != length(timeaxis(seeds))) && error("The time dimensions of both arrays need to the same")
     bkg_means = Array{Float64}(undef, n)
@@ -82,7 +94,7 @@ function light_source_contrib(img::AxisArray{T1, 3},
         # fit a kernel density estimate to the background pixels
         fitted_kde = kde(vec(Float64.(img[Axis{:time}(i)][bkg_mask])))
         # find the center of the KDE of the background peak
-        bkg_means[i] = find_peak_center(collect(fitted_kde.x), fitted_kde.density)
+        bkg_means[i] = find_peak_center(collect(fitted_kde.x), fitted_kde.density; h=h)
     end
     bkg_means
 end
