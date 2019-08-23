@@ -27,13 +27,12 @@ function create_cell_grid(img::AbstractArray{T, 3}, tracks::AbstractArray{S, 1};
         particle = subdf[1, :particle]
 
         # for each frame in the movie
-        for (tidx, xpos, ypos, id) in zip(1:nt, subdf[:x], subdf[:y], subdf[:id])
+        for (tidx, xpos, ypos, id) in zip(1:nt, subdf[!, :x], subdf[!, :y], subdf[!, :id])
 
             # find approximate index of the center of the cell
             xidx, yidx = round(Int, ypos), round(Int, xpos)
             # handle edges intelligently
             xrange, yrange = max(xidx-win, 1):min(xidx+win, nx), max(yidx-win, 1):min(yidx+win, ny)
-
             # range - idx centers the view on the cell to be +/- the window and then we offset it by
             # our current location in the grid
             xloc, yloc = xrange .- xidx .+ xcent,yrange .- yidx .+ ycent
