@@ -121,3 +121,15 @@ function find_peak_center(x::Vector{Float64}, y::Vector{Float64}; h::Float64=0.7
     high = x[transitions[2]]
     low + (high - low) / 2
 end
+
+
+"""
+    colorize(img, scheme)
+
+Given a grayscale image `img`, apply a colorscheme `scheme` to the image lazily. 
+"""
+function colorize(img::AbstractArray{Gray{T}, N}; scheme::Symbol=:magma) where {T, N}
+    minval, maxval = gray.(extrema(img))
+    cscheme = getfield(ColorSchemes, scheme)
+    mappedarray(x->RGB{T}(get(cscheme, gray(x), (minval, maxval))), img)
+end

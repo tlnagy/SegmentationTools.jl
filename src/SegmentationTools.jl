@@ -11,6 +11,8 @@ using Colors
 using FreeTypeAbstraction
 using Images
 using KernelDensity
+using ColorSchemes
+using MappedArrays
 
 include("utils.jl")
 include("segment.jl")

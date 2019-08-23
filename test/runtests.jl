@@ -1,6 +1,8 @@
 using Test
 using Distributions
 using SegmentationTools
+using Colors
+using FixedPointNumbers
 
 @testset "Find peak centers" begin
     # even width peak
@@ -31,4 +33,15 @@ using SegmentationTools
     @test SegmentationTools.find_peak_center(xs, ys) == 28.0
     # low cut
     @test SegmentationTools.find_peak_center(xs, ys, h=0.25) == 25.0
+end
+
+@testset "colorize" begin
+    # Fixed Point Number
+    data = rand(Gray{N0f16}, 1024, 1024, 10)
+    # make sure the backing type is still N0f16 changed by the mapping
+    @test eltype(SegmentationTools.colorize(data)) <: RGB{N0f16}
+
+    # same for floating point numbers
+    data = rand(Gray{Float64}, 1024, 1024, 10)
+    @test eltype(SegmentationTools.colorize(data)) <: RGB{Float64}
 end
