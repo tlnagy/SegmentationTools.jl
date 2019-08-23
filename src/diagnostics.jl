@@ -1,12 +1,17 @@
 """
     create_cell_grid(img, tracks; win) -> grid
 
-Given a xyt image and set of tracks, creates a grid of all tracked cells with the cells centered
-in their grid location. Helps to quickly diagnose weird cell segmentation behavior.
+Given a xyt image and set of tracks, creates a grid of all tracked cells with
+the cells centered in their grid location. Helps to quickly diagnose weird cell 
+segmentation behavior.
 """
+function create_cell_grid(img::AbstractArray, tracks::DataFrame; particle_col=:particle, win=30)
+    create_cell_grid(img, [particle for particle in groupby(tracks, particle_col)]; win=win)
+end
+
 function create_cell_grid(img::AbstractArray{T, 3}, tracks::AbstractArray{S, 1}; win=30) where {T, S <: SubDataFrame}
     n_tracks = length(tracks)
-    ny, nx, nt = size(img)
+    nx, ny, nt = size(img)
     cols = ceil(Int, sqrt(n_tracks))
     fontface = newface(normpath(@__DIR__, "..", "assets", "ubuntu-font-family-0.83", "Ubuntu-R.ttf"))
     w = cols*(win*2+2)
@@ -39,7 +44,9 @@ function create_cell_grid(img::AbstractArray{T, 3}, tracks::AbstractArray{S, 1};
                 cell = UInt8.(img[xrange, yrange, tidx] .== id)
             end
 
-            renderstring!(cell, "$particle", fontface, (10,10), 2, 2, halign=:hleft, valign=:vtop, fcolor=default_el)
+            txt_offset = win > 20 ? 2 : 0
+            renderstring!(cell, "$particle", fontface, (10, 10), txt_offset,
+                          txt_offset, halign=:hleft, valign=:vtop, fcolor=default_el)
 
             grid[xloc, yloc, tidx] .= cell
         end

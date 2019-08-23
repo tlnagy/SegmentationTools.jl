@@ -39,6 +39,20 @@ linked = DataFrame(Pandas.DataFrame(t)); # convert back to Julian dataframe
 
 ## Analysis and Plotting
 
+```@example
+using ImageShow
+using DataFrames
+using Colors
+using SegmentationTools
+
+img = zeros(Int, 25, 45, 1)
+xs = 11:12:35
+img[13, xs, 1] .= [1,2,3] # three equidistant dots
+tracks = DataFrame(y=13, x=xs, frame=1:3, particle=1:3, id=1:3)
+result = SegmentationTools.create_cell_grid(img, tracks, win=10)
+Gray.(result[:, :, 1])
+```
+
 ```@docs
 SegmentationTools.create_cell_grid
 ```
