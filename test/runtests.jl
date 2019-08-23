@@ -1,8 +1,8 @@
 using Test
 using Distributions
-using SegmentationTools
 using Colors
 using FixedPointNumbers
+using SegmentationTools
 
 @testset "Find peak centers" begin
     # even width peak
