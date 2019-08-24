@@ -39,7 +39,21 @@ linked = DataFrame(Pandas.DataFrame(t)); # convert back to Julian dataframe
 
 ## Analysis and Plotting
 
-```@example
+It's often helpful to look at each cell quickly to validate the tracking and
+segmentation, which is where [`create_cell_grid`](@ref) comes in handy. Let's
+create a XYT image that we've segmented and tracked.
+
+The `tracks` dataframe should have the following columns (`trackpy` outputs
+these by default):
+
+* `x`, `y`: the centroid coordinates
+* `frame`: the time index
+* `id`: the per-frame id that can vary over the time course.
+* `particle`: a persistent `id` that is the same across all time points for a
+  given particle. `trackpy` links up the different `id`s into one `particle`
+  value.
+
+```@example cell_grid
 using ImageShow
 using DataFrames
 using Colors
@@ -49,6 +63,15 @@ img = zeros(Int, 25, 45, 1)
 xs = 11:12:35
 img[13, xs, 1] .= [1,2,3] # three equidistant dots
 tracks = DataFrame(y=13, x=xs, frame=1:3, particle=1:3, id=1:3)
+Gray.(img[:, :, 1]./4.0)
+```
+
+
+The corresponding cell grid will have the `particle` id displayed in the upper
+right corner and show the time course of the movie with the particle's centroid
+centered in the grid cell.
+
+```@example cell_grid
 result = SegmentationTools.create_cell_grid(img, tracks, win=10)
 Gray.(result[:, :, 1])
 ```
