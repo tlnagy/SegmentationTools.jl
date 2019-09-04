@@ -1,4 +1,5 @@
 using Images: otsu_threshold, imadjustintensity
+using Unitful: μm
 
 """
     segment_cells(img, seed_channel, segment_channel, maskfunc)
@@ -48,33 +49,52 @@ end
 Build a `DataFrames.DataFrame` that is compatible with trackpys `link_df` function. Needs
 to be converted to a `Pandas.DataFrame` before passing
 """
-function build_tp_df(img::AbstractArray{T, 4},
-                     segments::Array{S, 1},
-                     signal_channel) where {T, S <: SegmentedImage}
+function build_tp_df(img::AxisArray{T1, N}, 
+                     thresholds::AxisArray{T2, 3}) where {T1, T2 <: Bool, N}
 
+    xstep = step(AxisArrays.axes(img, Axis{:x}).val)
+    ystep = step(AxisArrays.axes(img, Axis{:y}).val)
+    (xstep != ystep) && @warn "Different scaling for x and y axes is not supported"
+    pixelarea = xstep * ystep
     particles = DataFrames.DataFrame[]
-    for i in 1:length(segments)
-        # drop first element, which is the background
-        centroids =  component_centroids(segments[i].image_indexmap)[2:end]
+    for (idx, timepoint) in enumerate(timeaxis(img))
+        # we have to pass the underlying array due to
+        # https://github.com/JuliaImages/ImageMorphology.jl/issues/21
+        components = Images.label_components(thresholds[Axis{:time}(timepoint)].data)
+
+        # convert boolean area to microns with the assumption that the pixel
+        # space is the same in both x and y
+        areas = round.(μm^2, Images.component_lengths(components) .* pixelarea, sigdigits=4)
+        
+        # filter out too large and too small particles
+        correct_size = 10μm^2 .< areas .< 500μm^2
+        ids = unique(components)[correct_size]
+        centroids =  Images.component_centroids(components)[correct_size]
+
         n = length(centroids)
         ys = map(f->f[1], centroids) # y corresponds to rows
         xs = map(f->f[2], centroids) # x corresponds to columns
-        frames = fill(i-1, n)
+        frames = fill(idx-1, n)
 
-        signal = img[Axis{:channel}(signal_channel), Axis{:time}(i)]
-        tf = fill(0.0, n)
-        for obj in 1:n
-            tf[obj] = sum(signal[segments[i].image_indexmap .== obj])
+        nₛ = size(img, Axis{:channel})
+        tf = fill(0.0, n, nₛ)
+        for c in 1:nₛ
+            signal = view(img, Axis{:time}(timepoint), Axis{:channel}(c))
+            for (idx, id) in enumerate(ids)
+                tf[idx, c] = sum(signal[components .== id])
+            end
         end
-        ids = segments[i].segment_labels
+        
         # dictionary of ids to areas
-        areas = segments[i].segment_pixel_count
         data = Dict(:x=>xs,
                     :y=>ys,
                     :frame=>frames,
                     :id=>ids,
-                    :area=>map(id->areas[id], ids),
-                    :tf=>tf)
+                    :area=>areas[correct_size])
+        
+        for c in 1:nₛ
+            data[Symbol("tf_", AxisArrays.axes(img, Axis{:channel})[c])] = tf[:, c]
+        end
         push!(particles, DataFrames.DataFrame(data))
     end
     vcat(particles...)
