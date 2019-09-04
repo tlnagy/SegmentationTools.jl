@@ -49,8 +49,8 @@ end
 Build a `DataFrames.DataFrame` that is compatible with trackpys `link_df` function. Needs
 to be converted to a `Pandas.DataFrame` before passing
 """
-function build_tp_df(img::AxisArray{T1, N}, 
-                     thresholds::AxisArray{T2, 3}) where {T1, T2 <: Bool, N}
+function build_tp_df(img::AxisArray{T1, 4}, 
+                     thresholds::AxisArray{T2, 3}) where {T1, T2 <: Bool}
 
     xstep = step(AxisArrays.axes(img, Axis{:x}).val)
     ystep = step(AxisArrays.axes(img, Axis{:y}).val)
@@ -98,4 +98,12 @@ function build_tp_df(img::AxisArray{T1, N},
         push!(particles, DataFrames.DataFrame(data))
     end
     vcat(particles...)
+end
+
+function build_tp_df(img::AxisArray{T1, 3}, 
+                     thresholds::AxisArray{T2, 3}) where {T1, T2 <: Bool}
+    build_tp_df(AxisArray(reshape(img, size(img)..., 1), 
+                          AxisArrays.axes(img)..., Axis{:channel}([:slice])),
+                thresholds
+               )
 end
