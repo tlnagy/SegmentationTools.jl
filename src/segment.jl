@@ -1,5 +1,6 @@
 using Images: otsu_threshold, imadjustintensity
 using Unitful: μm
+using ProgressMeter
 
 """
     segment_cells(img, seed_channel, segment_channel, maskfunc)
@@ -57,7 +58,7 @@ function build_tp_df(img::AxisArray{T1, 4},
     (xstep != ystep) && @warn "Different scaling for x and y axes is not supported"
     pixelarea = xstep * ystep
     particles = DataFrames.DataFrame[]
-    for (idx, timepoint) in enumerate(timeaxis(img))
+    @showprogress 1 "Computing..." for (idx, timepoint) in enumerate(timeaxis(img))
         # we have to pass the underlying array due to
         # https://github.com/JuliaImages/ImageMorphology.jl/issues/21
         components = Images.label_components(thresholds[Axis{:time}(timepoint)].data)
