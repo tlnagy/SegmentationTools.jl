@@ -122,6 +122,19 @@ function build_tp_df(img::AxisArray{T1, 4},
     build_tp_df(img, AxisArray(Bool.(thresholds), _axes...))
 end
 
+"""
+    Given a boolean matrix of the pixels belonging to a single cell,
+`cell_mask`, and a boolean matrix of foreground pixels, `foreground`, this
+function  identifies the local background ring around the cell.
+"""
+function _get_locality_mask(cell_mask::BitArray{2}, foreground::BitArray{2}; dist=(1,6))
+    all_localities = dist[1] .< distance_transform(feature_transform(foreground)) .< dist[2]
+    # create a 5px wide mask that is at least 1 px away from the cell
+    locality = dist[1] .< distance_transform(feature_transform(cell_mask)) .< dist[2]
+    # only return true where this cells locality overlaps with all local areas
+    locality .&= all_localities
+end
+
 
 """
     compute_equivalent_background(slice, labels, id)
@@ -133,12 +146,9 @@ fluorescence surrounding the cell.
 function compute_equivalent_background(slice::AbstractArray{T, 2}, 
                                        labels::AbstractArray{Int, 2}, 
                                        id::Int) where {T}
-    inverted_output = labels .== 0.0
+    foreground = labels .!= 0.0
     component_mask = labels .== id
-    # create a 5px wide mask that is at least 1 px away from the cell
-    locality = 1 .< distance_transform(feature_transform(component_mask)) .< 6
-    # subtract where other cells are located so they don't contaminate our background
-    locality_mask = min.(locality, inverted_output)
+    locality_mask = _get_locality_mask(component_mask, foreground)
     local_bkg = locality_mask .* slice
     # fluorescence of an equivalent background area
     mean(local_bkg[locality_mask]) * count(component_mask)
