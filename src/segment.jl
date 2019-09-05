@@ -61,7 +61,9 @@ function build_tp_df(img::AxisArray{T1, 4},
     @showprogress 1 "Computing..." for (idx, timepoint) in enumerate(timeaxis(img))
         # we have to pass the underlying array due to
         # https://github.com/JuliaImages/ImageMorphology.jl/issues/21
-        components = Images.label_components(thresholds[Axis{:time}(timepoint)].data)
+        components = Images.label_components(thresholds[Axis{:y}(:),
+                                                        Axis{:x}(:), 
+                                                        Axis{:time}(timepoint)].data)
 
         # convert boolean area to microns with the assumption that the pixel
         # space is the same in both x and y
@@ -78,13 +80,21 @@ function build_tp_df(img::AxisArray{T1, 4},
         frames = fill(idx-1, n)
 
         nₛ = size(img, Axis{:channel})
+        nx = size(img, Axis{:x})
+        ny = size(img, Axis{:y})
+        win = 50
         tf = fill(0.0, n, nₛ)
         for c in 1:nₛ
             signal = view(img, Axis{:time}(timepoint), Axis{:channel}(c))
             for (idx, id) in enumerate(ids)
                 # compute and subtract the local bkg equivalent from the total
                 # fluorescence 
-                bkg = compute_equivalent_background(signal, components, id)
+                xidx, yidx = round(Int, xs[idx]), round(Int, ys[idx])
+                xrange = max(xidx-win, 1):min(xidx+win, nx)
+                yrange = max(yidx-win, 1):min(yidx+win, ny)
+                local_signal = view(signal, Axis{:y}(yrange), Axis{:x}(xrange))
+                local_labels = view(components, yrange, xrange)
+                bkg = compute_equivalent_background(local_signal, local_labels, id)
                 tf[idx, c] = sum(signal[components .== id]) - bkg
             end
         end
