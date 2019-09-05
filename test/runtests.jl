@@ -4,6 +4,7 @@ using Colors
 using FixedPointNumbers
 using SegmentationTools
 using ImageDraw
+using Images
 using AxisArrays
 using Unitful: μm
 
@@ -77,4 +78,20 @@ end
     # Check warnings
     wrapped = AxisArray(img, Axis{:y}(0.5μm:0.5μm:50μm), Axis{:x}(1μm:1μm:100μm), Axis{:time}(1:5));
     @test_logs (:warn, "Different scaling for x and y axes is not supported") SegmentationTools.build_tp_df(wrapped, thresholds)
+end
+
+@testset "local background calc" begin
+    img = zeros(Gray, 50, 50)
+
+    # create a cell with a background half a bright around it
+    centers = [Point(20, 20), Point(20, 20)]
+    radii = [11, 5]
+    # the local background will be twice as dim as the "cell"
+    colors = [Gray(0.5), Gray(1.0)]
+
+    ImageDraw.draw!(img, [ImageDraw.CirclePointRadius(c, r) for (c,r) in zip(centers, radii)], colors)
+    labels = Images.label_components(img .== 1.0)
+    # the cell should be twice as bright as an equivalent sized background
+    cell_tf = sum(img[img .== 1.0])
+    @test cell_tf/SegmentationTools.compute_equivalent_background(img, labels , 1) == 2.0
 end

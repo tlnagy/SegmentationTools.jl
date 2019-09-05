@@ -44,7 +44,7 @@ function segment_cells(img::AxisArray{T, 4},
 end
 
 """
-    build_tp_df(img, segments, signal_channel)
+    build_tp_df(img, thresholds)
 
 Build a `DataFrames.DataFrame` that is compatible with trackpys `link_df` function. Needs
 to be converted to a `Pandas.DataFrame` before passing
@@ -81,7 +81,10 @@ function build_tp_df(img::AxisArray{T1, 4},
         for c in 1:nₛ
             signal = view(img, Axis{:time}(timepoint), Axis{:channel}(c))
             for (idx, id) in enumerate(ids)
-                tf[idx, c] = sum(signal[components .== id])
+                # compute and subtract the local bkg equivalent from the total
+                # fluorescence 
+                bkg = compute_equivalent_background(signal, components, id)
+                tf[idx, c] = sum(signal[components .== id]) - bkg
             end
         end
         
@@ -106,4 +109,36 @@ function build_tp_df(img::AxisArray{T1, 3},
                           AxisArrays.axes(img)..., Axis{:channel}([:slice])),
                 thresholds
                )
+end
+
+"""
+Given an `img` with at least `y`, `x`, and `t` axes and a 3 dimensional boolean
+array, `thresholds`, in yxt order.
+"""
+function build_tp_df(img::AxisArray{T1, 4}, 
+                     thresholds::BitArray{3}) where {T1}
+    _axes = Tuple(AxisArrays.axes(img, Axis{ax}) for ax in (:y, :x, :time))
+    build_tp_df(img, AxisArray(Bool.(thresholds), _axes...))
+end
+
+
+"""
+    compute_equivalent_background(slice, labels, id)
+
+    Given a cell `id` and a matrix of labeled cells `labels`, compute the total 
+fluorescence expected for an object the size of the cell using the local background
+fluorescence surrounding the cell. 
+"""
+function compute_equivalent_background(slice::AbstractArray{T, 2}, 
+                                       labels::AbstractArray{Int, 2}, 
+                                       id::Int) where {T}
+    inverted_output = labels .== 0.0
+    component_mask = labels .== id
+    # create a 5px wide mask that is at least 1 px away from the cell
+    locality = 1 .< distance_transform(feature_transform(component_mask)) .< 6
+    # subtract where other cells are located so they don't contaminate our background
+    locality_mask = min.(locality, inverted_output)
+    local_bkg = locality_mask .* slice
+    # fluorescence of an equivalent background area
+    mean(local_bkg[locality_mask]) * count(component_mask)
 end
