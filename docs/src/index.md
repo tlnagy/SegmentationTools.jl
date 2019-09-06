@@ -27,7 +27,7 @@ SegmentationTools.build_tp_df
 I generally use it like so:
 
 ```julia
-particles = SegmentationTools.build_tp_df(img1, segments, :EPI_mNG);
+particles = SegmentationTools.build_tp_df(img, thresholds);
 using PyCall
 tp = pyimport("trackpy")
 
@@ -78,6 +78,37 @@ Gray.(result[:, :, 1])
 
 ```@docs
 SegmentationTools.create_cell_grid
+```
+
+#### Observing cell localities
+
+For low signal-to-noise applications, it can be useful to compute the local
+background to normalize against. The nonexported function,
+[`SegmentationTools._get_locality_mask`](@ref), can be used to display the
+localities used in [`SegmentationTools.build_tp_df`](@ref) to diagnose any weird
+behaviors.
+
+
+```@example
+using FileIO, Images, SegmentationTools
+slice = FileIO.load("https://user-images.githubusercontent.com/1661487/64392405-81a30500-d001-11e9-8262-744f76ff2f69.png")
+components = label_components(Bool.(slice))
+foreground = components .> 0.0
+locals = Array{RGB{Float64}, 2}[]
+gold = RGB((255,215,0)./255...)
+orchid = RGB((186,85,211)./255...)
+for i in 1:maximum(components)
+    mask = components .== i
+    result = RGB(0.5, 0.5, 0.5) .* foreground
+    result .+= gold .* (Float64.(SegmentationTools._get_locality_mask(mask, foreground, dist=(10, 60))))
+    result[mask] .= orchid
+    push!(locals, result)
+end
+reshape(locals, (:, 6))
+```
+
+```@docs
+SegmentationTools._get_locality_mask
 ```
 
 ## Miscellaneous
