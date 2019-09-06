@@ -105,5 +105,5 @@ end
     labels = Images.label_components(img .== 1.0)
     # the cell should be twice as bright as an equivalent sized background
     cell_tf = sum(img[img .== 1.0])
-    @test cell_tf/SegmentationTools.compute_equivalent_background(img, labels , 1) == 2.0
+    @test cell_tf/SegmentationTools._compute_equivalent_background(img, labels , 1) == 2.0
 end

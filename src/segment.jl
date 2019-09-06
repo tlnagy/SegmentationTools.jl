@@ -79,25 +79,10 @@ function build_tp_df(img::AxisArray{T1, 4},
         xs = map(f->f[2], centroids) # x corresponds to columns
         frames = fill(idx-1, n)
 
-        nₛ = size(img, Axis{:channel})
-        nx = size(img, Axis{:x})
-        ny = size(img, Axis{:y})
-        win = 50
-        tf = fill(0.0, n, nₛ)
-        for c in 1:nₛ
-            signal = view(img, Axis{:time}(timepoint), Axis{:channel}(c))
-            for (idx, id) in enumerate(ids)
-                # compute and subtract the local bkg equivalent from the total
-                # fluorescence 
-                xidx, yidx = round(Int, xs[idx]), round(Int, ys[idx])
-                xrange = max(xidx-win, 1):min(xidx+win, nx)
-                yrange = max(yidx-win, 1):min(yidx+win, ny)
-                local_signal = view(signal, Axis{:y}(yrange), Axis{:x}(xrange))
-                local_labels = view(components, yrange, xrange)
-                bkg = compute_equivalent_background(local_signal, local_labels, id)
-                tf[idx, c] = sum(signal[components .== id]) - bkg
-            end
-        end
+        # select the current time slice and enforce storage order to match
+        # components 
+        slice = view(img, Axis{:y}(:), Axis{:x}(:), Axis{:channel}(:), Axis{:time}(timepoint))
+        tf = _compute_total_fluorescences(slice, ids, components, centroids)
         
         # dictionary of ids to areas
         data = Dict(:x=>xs,
@@ -106,7 +91,7 @@ function build_tp_df(img::AxisArray{T1, 4},
                     :id=>ids,
                     :area=>areas[correct_size])
         
-        for c in 1:nₛ
+        for c in 1:size(tf, 2)
             data[Symbol("tf_", AxisArrays.axes(img, Axis{:channel})[c])] = tf[:, c]
         end
         push!(particles, DataFrames.DataFrame(data))
@@ -147,13 +132,13 @@ end
 
 
 """
-    compute_equivalent_background(slice, labels, id)
+    _compute_equivalent_background(slice, labels, id)
 
     Given a cell `id` and a matrix of labeled cells `labels`, compute the total 
 fluorescence expected for an object the size of the cell using the local background
 fluorescence surrounding the cell. 
 """
-function compute_equivalent_background(slice::AbstractArray{T, 2}, 
+function _compute_equivalent_background(slice::AbstractArray{T, 2}, 
                                        labels::AbstractArray{Int, 2}, 
                                        id::Int) where {T}
     foreground = labels .!= 0.0
@@ -162,4 +147,44 @@ function compute_equivalent_background(slice::AbstractArray{T, 2},
     local_bkg = locality_mask .* slice
     # fluorescence of an equivalent background area
     mean(local_bkg[locality_mask]) * count(component_mask)
+end
+
+function _compute_total_fluorescences(slice::AxisArray{T1, 3}, 
+                                      ids::Vector{Int}, 
+                                      labels::AbstractArray{Int, 2}, 
+                                      centroids::AbstractArray{Tuple{Float64, Float64}}) where {T1}
+    n = length(centroids)
+    nₛ = size(slice, Axis{:channel})
+    tf = fill(0.0, n, nₛ)
+    for c in 1:nₛ
+        signal = view(slice, Axis{:channel}(c))
+        tf[:, c] .= _compute_total_fluorescences(signal, ids, labels, centroids)
+    end
+    tf
+end
+
+function _compute_total_fluorescences(slice::AxisArray{T1, 2}, 
+                                      ids::Vector{Int}, 
+                                      labels::AbstractArray{Int, 2}, 
+                                      centroids::AbstractArray{Tuple{Float64, Float64}}) where {T1}
+    n = length(centroids)
+    nx = size(slice, Axis{:x})
+    ny = size(slice, Axis{:y})
+    win = 50
+    tf = fill(0.0, n)
+
+    for (idx, id) in enumerate(ids)
+        # compute and subtract the local bkg equivalent from the total
+        # fluorescence 
+        centroid = centroids[idx]
+        xidx, yidx = round(Int, centroid[2]), round(Int, centroid[1])
+        xrange = max(xidx-win, 1):min(xidx+win, nx)
+        yrange = max(yidx-win, 1):min(yidx+win, ny)
+        local_signal = view(slice, Axis{:y}(yrange), Axis{:x}(xrange))
+        local_labels = view(labels, yrange, xrange)
+        bkg = _compute_equivalent_background(local_signal, local_labels, id)
+        tf[idx] = sum(slice[labels .== id]) - bkg
+    end
+
+    tf
 end
