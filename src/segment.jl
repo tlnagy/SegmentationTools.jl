@@ -58,21 +58,22 @@ function build_tp_df(img::AxisArray{T1, 4},
     (xstep != ystep) && @warn "Different scaling for x and y axes is not supported"
     pixelarea = xstep * ystep
     particles = DataFrames.DataFrame[]
-    @showprogress 1 "Computing..." for (idx, timepoint) in enumerate(timeaxis(img))
-        # we have to pass the underlying array due to
-        # https://github.com/JuliaImages/ImageMorphology.jl/issues/21
-        components = Images.label_components(thresholds[Axis{:y}(:),
-                                                        Axis{:x}(:), 
-                                                        Axis{:time}(timepoint)].data)
+    # we have to pass the underlying array due to
+    # https://github.com/JuliaImages/ImageMorphology.jl/issues/21
+    components = Images.label_components(thresholds[Axis{:y}(:),
+                                                    Axis{:x}(:), 
+                                                    Axis{:time}(:)].data, [1,2])
+    for (idx, timepoint) in enumerate(timeaxis(img))
+        component_slice = view(components, :, :, idx)
 
         # convert boolean area to microns with the assumption that the pixel
         # space is the same in both x and y
-        areas = round.(μm^2, Images.component_lengths(components) .* pixelarea, sigdigits=4)
-        
+        lengths = Images.component_lengths(component_slice)
+        areas = round.(μm^2, lengths .* pixelarea, sigdigits=4)
         # filter out too large and too small particles
-        correct_size = 10μm^2 .< areas .< 500μm^2
-        ids = unique(components)[correct_size]
-        centroids =  Images.component_centroids(components)[correct_size]
+        correct_size = (10μm^2 .< areas .< 500μm^2)
+        ids = unique(component_slice)[correct_size[lengths .> 0]]
+        centroids = Images.component_centroids(component_slice)[correct_size]
 
         n = length(centroids)
         ys = map(f->f[1], centroids) # y corresponds to rows
