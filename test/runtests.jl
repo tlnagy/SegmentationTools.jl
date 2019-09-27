@@ -55,7 +55,7 @@ end
 
     # create three cells
     centers = [Point(20, 20), Point(25, 17), Point(70, 70), Point(70, 70), Point(16, 80)]
-    radii = [5, 5, 11, 5, 7]
+    radii = [5, 5, 15, 5, 7]
 
     bkg = 0.1
 
@@ -74,14 +74,18 @@ end
 
     # three timepoints and three separate particles
     @test size(particles, 1) == 3*5 
+
+    # we now assign unique ids per-frame, so we need to convert these back to
+    # consistent ids across time
+    ids = mod.(particles[!, :id].-1, 3) .+ 1 
     # verify that the total fluorescence values in the dataframe grow dimmer as
     # we expect
-    @test all(particles[particles[!, :id] .== 1, :tf_slice] ./ 145.0 .≈ [1.0/i for i in 1:5])
+    @test all(particles[ids .== 1, :tf_slice] ./ 145.0 .≈ [1.0/i for i in 1:5])
 
     # for the third particle verify that the total fluorescence values have the
     # correct amount of background subtracted off, i.e for a background value of
     # `bkg` the final value should be tf - area * bkg
-    @test all(particles[particles[!, :id] .== 3, :tf_slice] .≈ [69/i - 69*bkg for i in 1:5])
+    @test all(particles[ids .== 3, :normed_tf_slice] .≈ [69/i - 69*bkg for i in 1:5])
 
     # test centroids
     @test particles[1, :x] == centers[5].x
@@ -97,7 +101,7 @@ end
 
     # create a cell with a background half a bright around it
     centers = [Point(20, 20), Point(20, 20)]
-    radii = [11, 5]
+    radii = [15, 5]
     # the local background will be twice as dim as the "cell"
     colors = [Gray(0.5), Gray(1.0)]
 
