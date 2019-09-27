@@ -82,7 +82,7 @@ function build_tp_df(img::AxisArray{T1, 4},
         # select the current time slice and enforce storage order to match
         # components 
         slice = view(img, Axis{:y}(:), Axis{:x}(:), Axis{:channel}(:), Axis{:time}(timepoint))
-        tf = _compute_total_fluorescences(slice, ids, components, centroids)
+        tf, bkg = _compute_total_fluorescences(slice, ids, component_slice, centroids)
         
         # dictionary of ids to areas
         data = Dict(:x=>xs,
@@ -91,8 +91,11 @@ function build_tp_df(img::AxisArray{T1, 4},
                     :id=>ids,
                     :area=>areas[correct_size])
         
+        cax = AxisArrays.axes(img, Axis{:channel})
         for c in 1:size(tf, 2)
-            data[Symbol("tf_", AxisArrays.axes(img, Axis{:channel})[c])] = tf[:, c]
+            data[Symbol("tf_", cax[c])] = tf[:, c]
+            data[Symbol("bkg_", cax[c])] = bkg[:, c]
+            data[Symbol("normed_tf_", cax[c])] = tf[:, c] .- bkg[:, c]
         end
         push!(particles, DataFrames.DataFrame(data))
     end
@@ -160,11 +163,14 @@ function _compute_total_fluorescences(slice::AxisArray{T1, 3},
     n = length(centroids)
     nₛ = size(slice, Axis{:channel})
     tf = fill(0.0, n, nₛ)
+    bkg = fill(0.0, n, nₛ)
     for c in 1:nₛ
         signal = view(slice, Axis{:channel}(c))
-        tf[:, c] .= _compute_total_fluorescences(signal, ids, labels, centroids)
+        _tf, _bkg = _compute_total_fluorescences(signal, ids, labels, centroids)
+        tf[:, c] .= _tf
+        bkg[:, c] .= _bkg
     end
-    tf
+    tf, bkg
 end
 
 function _compute_total_fluorescences(slice::AxisArray{T1, 2}, 
@@ -176,6 +182,7 @@ function _compute_total_fluorescences(slice::AxisArray{T1, 2},
     ny = size(slice, Axis{:y})
     win = 50
     tf = fill(0.0, n)
+    bkg = fill(0.0, n)
 
     for (idx, id) in enumerate(ids)
         # compute and subtract the local bkg equivalent from the total
@@ -186,9 +193,9 @@ function _compute_total_fluorescences(slice::AxisArray{T1, 2},
         yrange = max(yidx-win, 1):min(yidx+win, ny)
         local_signal = view(slice, Axis{:y}(yrange), Axis{:x}(xrange))
         local_labels = view(labels, yrange, xrange)
-        bkg = _compute_equivalent_background(local_signal, local_labels, id)
-        tf[idx] = sum(slice[labels .== id]) - bkg
+        bkg[idx] = _compute_equivalent_background(local_signal, local_labels, id)
+        tf[idx] = sum(slice[labels .== id])
     end
 
-    tf
+    tf, bkg
 end
