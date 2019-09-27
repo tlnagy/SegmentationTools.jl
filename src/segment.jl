@@ -63,7 +63,7 @@ function build_tp_df(img::AxisArray{T1, 4},
     components = Images.label_components(thresholds[Axis{:y}(:),
                                                     Axis{:x}(:), 
                                                     Axis{:time}(:)].data, [1,2])
-    for (idx, timepoint) in enumerate(timeaxis(img))
+    @showprogress 1 "Computing..." for (idx, timepoint) in enumerate(timeaxis(img))
         component_slice = view(components, :, :, idx)
 
         # convert boolean area to microns with the assumption that the pixel
