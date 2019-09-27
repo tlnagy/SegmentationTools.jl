@@ -97,7 +97,7 @@ end
 
     # create a cell with a background half a bright around it
     centers = [Point(20, 20), Point(20, 20)]
-    radii = [11, 5]
+    radii = [15, 5]
     # the local background will be twice as dim as the "cell"
     colors = [Gray(0.5), Gray(1.0)]
 

@@ -150,7 +150,7 @@ function _compute_equivalent_background(slice::AbstractArray{T, 2},
                                        id::Int) where {T}
     foreground = labels .!= 0.0
     component_mask = labels .== id
-    locality_mask = _get_locality_mask(component_mask, foreground)
+    locality_mask = _get_locality_mask(component_mask, foreground; dist=(2, 10))
     local_bkg = locality_mask .* slice
     # fluorescence of an equivalent background area
     mean(local_bkg[locality_mask]) * count(component_mask)
