@@ -140,18 +140,20 @@ end
 
 
 """
-    _compute_equivalent_background(slice, labels, id)
+    _compute_equivalent_background(slice, labels, id; dist)
 
     Given a cell `id` and a matrix of labeled cells `labels`, compute the total 
 fluorescence expected for an object the size of the cell using the local background
-fluorescence surrounding the cell. 
+fluorescence surrounding the cell. The local background is computed from `dist[1]`
+to `dist[2]` away from the cell.
 """
 function _compute_equivalent_background(slice::AbstractArray{T, 2}, 
                                        labels::AbstractArray{Int, 2}, 
-                                       id::Int) where {T}
+                                       id::Int;
+                                       dist=(2, 10)) where {T}
     foreground = labels .!= 0.0
     component_mask = labels .== id
-    locality_mask = _get_locality_mask(component_mask, foreground; dist=(2, 10))
+    locality_mask = _get_locality_mask(component_mask, foreground; dist=dist)
     local_bkg = locality_mask .* slice
     # fluorescence of an equivalent background area
     mean(local_bkg[locality_mask]) * count(component_mask)
