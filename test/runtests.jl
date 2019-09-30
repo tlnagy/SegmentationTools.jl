@@ -68,16 +68,16 @@ end
     end
 
     wrapped = AxisArray(img, Axis{:y}(1μm:1μm:100μm), Axis{:x}(1μm:1μm:100μm), Axis{:time}(1:5));
-    
+
     mask = AxisArray(img .> bkg, AxisArrays.axes(wrapped))
     particles = SegmentationTools.build_tp_df(wrapped, mask)
 
     # three timepoints and three separate particles
-    @test size(particles, 1) == 3*5 
+    @test size(particles, 1) == 3*5
 
     # we now assign unique ids per-frame, so we need to convert these back to
     # consistent ids across time
-    ids = mod.(particles[!, :id].-1, 3) .+ 1 
+    ids = mod.(particles[!, :id].-1, 3) .+ 1
     # verify that the total fluorescence values in the dataframe grow dimmer as
     # we expect
     @test all(particles[ids .== 1, :tf_slice] ./ 145.0 .≈ [1.0/i for i in 1:5])
@@ -110,4 +110,21 @@ end
     # the cell should be twice as bright as an equivalent sized background
     cell_tf = sum(img[img .== 1.0])
     @test cell_tf/SegmentationTools._compute_equivalent_background(img, labels , 1) == 2.0
+end
+
+@testset "Flatfield correction" begin
+    # construct a 2D gaussian
+    D = reshape(pdf.(Normal(50, 100), range(0, length=100)), :, 1) .* 100
+    # 0-centered gaussian noise
+    noise = Gray.(rand(Normal(0, 0.001), 100, 100))
+
+    illum = Gray.(D * D')
+    # make the signal = 2*illumination intensity
+    foreground = AxisArray(illum .+ illum .+ noise)
+    # background
+    background = illum .+ noise
+
+    # if the flatfield correction is working properly than the image after
+    # correction should equal 2.0 everywhere since it's 2 * illum
+    @test all(SegmentationTools.flatfield_correct(foreground, background, noise) .≈ 2.0)
 end

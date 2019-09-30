@@ -18,34 +18,51 @@ function flatfield(img::AxisArray{T, 3}) where {T}
     med
 end
 
-"""
-	flatfield_correct(img, axis, darkfield, flatfield)
-
-Flatfield correct `img`. This function subtracts the darkfield, clamps the output
-to positive values, divides by the flatfield, and then rescales and rebuilds the
-original image perserving the properties and axes.
-
-For example, to correct along the DAPI channel:
-
-```
-flatfield_correct(img[Axis{:channel}(:EPI_DAPI)], darkfield, flatfield_dapi)
-```
-"""
-function flatfield_correct(img::AxisArray{T1, N},
-                           darkfield::AbstractArray{T2, 2},
-                           flatfield::AbstractArray{T3, 2}) where {T1, T2, T3, N}
-    out = T1.(imadjustintensity(clamp01.(Float32.(arraydata(img) .- darkfield))./flatfield))
-    AxisArray(out, img.axes)
+@traitfn function flatfield_correct!(output,
+                                     img::AA,
+                                     flatfield::AbstractArray{T1, 2},
+                                     darkfield::AbstractArray{T2, 2}) where {AA <: AxisArray, T1, T2; HasTimeAxis{AA}}
+    for timepoint in timeaxis(img)
+        tp = Axis{:time}(timepoint)
+        _img = @view img[tp]
+        _output = @view output[tp]
+        flatfield_correct!(_output, _img, flatfield, darkfield)
+    end
 end
 
-function flatfield_correct(img::ImageMeta{T, N},
-                           darkfield,
-                           flatfield) where {T, N}
-    out = flatfield_correct(img.data, darkfield, flatfield)
-    copyproperties(img, out)
+@traitfn function flatfield_correct!(output,
+                                     img::AA,
+                                     flatfield::AbstractArray{T1, 2},
+                                     darkfield::AbstractArray{T2, 2}) where {AA <: AxisArray, T1, T2; !HasTimeAxis{AA}}
+    R = CartesianIndices(Base.axes(img))
+    for I in R
+        output[I] = (float(img[I]) - darkfield[I]) / (flatfield[I] - darkfield[I])
+    end
 end
 
-light_source_contrib(img::AxisArray, seeds::BitArray{3}; dist::Int=30, h::Float64=0.9) = 
+"""
+    flatfield_correct(img, flatfield, darkfield)
+
+Computes the flatfield for the given image `img` by dividing the image by the
+flatfield after subtracting the darkfield from both[^1]
+
+!!! note
+
+    This function assumes that the flatfield image has *not* had the darkfield
+    image subtracted yet.
+
+[^1]: http://nic.ucsf.edu/resources/how-to-acquire-flat-field-correction-images/
+"""
+function flatfield_correct(img::AxisArray, flatfield::AbstractArray{T1, 2}, darkfield::AbstractArray{T2, 2}) where {T1, T2}
+    output = similar(img, Gray{Float64})
+    flatfield_correct!(output, img, flatfield, darkfield)
+    output
+end
+
+flatfield_correct(img::ImageMeta, flatfield, darkfield) = copyproperties(img, flatfield_correct(img.data, flatfield, darkfield))
+
+
+light_source_contrib(img::AxisArray, seeds::BitArray{3}; dist::Int=30, h::Float64=0.9) =
     light_source_contrib(img, AxisArray(seeds, img.axes); dist=dist, h=h)
 
 """
@@ -60,13 +77,13 @@ a continuous distribution and then [`find_peak_center`](@ref) is used to identif
 !!! note
 
     The distribution of background pixels often ends up being quite non-normal, likely due
-    to misidentification. Empirically, I've found the finding the center of the kernel 
+    to misidentification. Empirically, I've found the finding the center of the kernel
     density estimate to be more robust than simpler statistics like mean, median, or even
     the maximum value of the KDE.
 
 ### Rationale
 
-Certain light sources, especially arc lamps, exhibit substantial variance in 
+Certain light sources, especially arc lamps, exhibit substantial variance in
 total brightness in time. Additionally, the background signal is dependent on the total
 light delivered and we can use that to identify the arc lamp wander and subtract it
 from the whole field of view at each timestep. This gives us more stable total
@@ -102,16 +119,16 @@ end
 """
     find_peak_center(x, y, h)
 
-Given two equal length arrays, `x`, and `y`, computes the half width 
-at `h` relative to the maximum of the peak in `y`, i.e. for `h=0.5`, this 
-function returns the value of `x` that corresponds to the half-width 
+Given two equal length arrays, `x`, and `y`, computes the half width
+at `h` relative to the maximum of the peak in `y`, i.e. for `h=0.5`, this
+function returns the value of `x` that corresponds to the half-width
 half-max. This is a robust method for identifying the center of a peak.
 """
 function find_peak_center(x::Vector{Float64}, y::Vector{Float64}; h::Float64=0.75)
     (length(x) != length(y)) && throw(DimensionMismatch("x and y have to have equal lengths"))
     # value at which we cut the peak
     cutoff = maximum(y)*h
-    
+
     # find the indices where we "enter" and "exit" the peak
     transitions = findall(i-> i != 0, diff(y .> cutoff))
     (length(transitions) != 2) && error("Dependent variable is not unimodal")
@@ -126,7 +143,7 @@ end
 """
     colorize(img, scheme)
 
-Given a grayscale image `img`, apply a colorscheme `scheme` to the image lazily. 
+Given a grayscale image `img`, apply a colorscheme `scheme` to the image lazily.
 """
 function colorize(img::AbstractArray{Gray{T}, N}; scheme::Symbol=:magma) where {T, N}
     minval, maxval = gray.(extrema(img))

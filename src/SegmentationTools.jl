@@ -13,6 +13,7 @@ using Images
 using KernelDensity
 using ColorSchemes
 using MappedArrays
+using SimpleTraits
 
 include("utils.jl")
 include("segment.jl")
