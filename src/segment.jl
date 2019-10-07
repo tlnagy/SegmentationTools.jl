@@ -45,13 +45,16 @@ function segment_cells(img::AxisArray{T, 4},
 end
 
 """
-    build_tp_df(img, thresholds)
+    build_tp_df(img, thresholds; dist)
 
-Build a `DataFrames.DataFrame` that is compatible with trackpys `link_df` function. Needs
-to be converted to a `Pandas.DataFrame` before passing
+Build a `DataFrames.DataFrame` that is compatible with trackpys `link_df`
+function. Needs to be converted to a `Pandas.DataFrame` before passing to
+trackpy. `dist` is a 2-tuple of integers indicating the minimum and maximum
+distance away in pixels from each cell to include in its local background
+calculation.
 """
-function build_tp_df(img::AxisArray{T1, 4}, 
-                     thresholds::AxisArray{T2, 3}) where {T1, T2 <: Bool}
+function build_tp_df(img::AxisArray{T1, 4},
+                     thresholds::AxisArray{T2, 3}; dist=(2, 10)) where {T1, T2 <: Bool}
 
     xstep = step(AxisArrays.axes(img, Axis{:x}).val)
     ystep = step(AxisArrays.axes(img, Axis{:y}).val)
@@ -61,7 +64,7 @@ function build_tp_df(img::AxisArray{T1, 4},
     # we have to pass the underlying array due to
     # https://github.com/JuliaImages/ImageMorphology.jl/issues/21
     components = Images.label_components(thresholds[Axis{:y}(:),
-                                                    Axis{:x}(:), 
+                                                    Axis{:x}(:),
                                                     Axis{:time}(:)].data, [1,2])
     @showprogress 1 "Computing..." for (idx, timepoint) in enumerate(timeaxis(img))
         component_slice = view(components, :, :, idx)
@@ -81,17 +84,17 @@ function build_tp_df(img::AxisArray{T1, 4},
         frames = fill(idx-1, n)
 
         # select the current time slice and enforce storage order to match
-        # components 
+        # components
         slice = view(img, Axis{:y}(:), Axis{:x}(:), Axis{:channel}(:), Axis{:time}(timepoint))
-        tf, bkg = _compute_total_fluorescences(slice, ids, component_slice, centroids)
-        
+        tf, bkg = _compute_total_fluorescences(slice, ids, component_slice, centroids, dist=dist)
+
         # dictionary of ids to areas
         data = Dict(:x=>xs,
                     :y=>ys,
                     :frame=>frames,
                     :id=>ids,
                     :area=>areas[correct_size])
-        
+
         cax = AxisArrays.axes(img, Axis{:channel})
         for c in 1:size(tf, 2)
             data[Symbol("tf_", cax[c])] = tf[:, c]
@@ -103,11 +106,12 @@ function build_tp_df(img::AxisArray{T1, 4},
     vcat(particles...)
 end
 
-function build_tp_df(img::AxisArray{T1, 3}, 
-                     thresholds::AxisArray{T2, 3}) where {T1, T2 <: Bool}
-    build_tp_df(AxisArray(reshape(img, size(img)..., 1), 
+function build_tp_df(img::AxisArray{T1, 3},
+                     thresholds::AxisArray{T2, 3}; dist=(2, 10)) where {T1, T2 <: Bool}
+    build_tp_df(AxisArray(reshape(img, size(img)..., 1),
                           AxisArrays.axes(img)..., Axis{:channel}([:slice])),
-                thresholds
+                thresholds,
+                dist=dist
                )
 end
 
@@ -115,10 +119,10 @@ end
 Given an `img` with at least `y`, `x`, and `t` axes and a 3 dimensional boolean
 array, `thresholds`, in yxt order.
 """
-function build_tp_df(img::AxisArray{T1, 4}, 
-                     thresholds::BitArray{3}) where {T1}
+function build_tp_df(img::AxisArray{T1, 4},
+                     thresholds::BitArray{3}; dist=(2, 10)) where {T1}
     _axes = Tuple(AxisArrays.axes(img, Axis{ax}) for ax in (:y, :x, :time))
-    build_tp_df(img, AxisArray(Bool.(thresholds), _axes...))
+    build_tp_df(img, AxisArray(Bool.(thresholds), _axes...), dist=dist)
 end
 
 """
@@ -142,13 +146,13 @@ end
 """
     _compute_equivalent_background(slice, labels, id; dist)
 
-    Given a cell `id` and a matrix of labeled cells `labels`, compute the total 
+    Given a cell `id` and a matrix of labeled cells `labels`, compute the total
 fluorescence expected for an object the size of the cell using the local background
 fluorescence surrounding the cell. The local background is computed from `dist[1]`
 to `dist[2]` away from the cell.
 """
-function _compute_equivalent_background(slice::AbstractArray{T, 2}, 
-                                       labels::AbstractArray{Int, 2}, 
+function _compute_equivalent_background(slice::AbstractArray{T, 2},
+                                       labels::AbstractArray{Int, 2},
                                        id::Int;
                                        dist=(2, 10)) where {T}
     foreground = labels .!= 0.0
@@ -156,30 +160,32 @@ function _compute_equivalent_background(slice::AbstractArray{T, 2},
     locality_mask = _get_locality_mask(component_mask, foreground; dist=dist)
     local_bkg = locality_mask .* slice
     # fluorescence of an equivalent background area
-    mean(local_bkg[locality_mask]) * count(component_mask)
+    median(local_bkg[locality_mask]) * count(component_mask)
 end
 
-function _compute_total_fluorescences(slice::AxisArray{T1, 3}, 
-                                      ids::Vector{Int}, 
-                                      labels::AbstractArray{Int, 2}, 
-                                      centroids::AbstractArray{Tuple{Float64, Float64}}) where {T1}
+function _compute_total_fluorescences(slice::AxisArray{T1, 3},
+                                      ids::Vector{Int},
+                                      labels::AbstractArray{Int, 2},
+                                      centroids::AbstractArray{Tuple{Float64, Float64}};
+                                      dist=(2, 10)) where {T1}
     n = length(centroids)
     nₛ = size(slice, Axis{:channel})
     tf = fill(0.0, n, nₛ)
     bkg = fill(0.0, n, nₛ)
     for c in 1:nₛ
         signal = view(slice, Axis{:channel}(c))
-        _tf, _bkg = _compute_total_fluorescences(signal, ids, labels, centroids)
+        _tf, _bkg = _compute_total_fluorescences(signal, ids, labels, centroids, dist=dist)
         tf[:, c] .= _tf
         bkg[:, c] .= _bkg
     end
     tf, bkg
 end
 
-function _compute_total_fluorescences(slice::AxisArray{T1, 2}, 
-                                      ids::Vector{Int}, 
-                                      labels::AbstractArray{Int, 2}, 
-                                      centroids::AbstractArray{Tuple{Float64, Float64}}) where {T1}
+function _compute_total_fluorescences(slice::AxisArray{T1, 2},
+                                      ids::Vector{Int},
+                                      labels::AbstractArray{Int, 2},
+                                      centroids::AbstractArray{Tuple{Float64, Float64}};
+                                      dist=(2, 10)) where {T1}
     n = length(centroids)
     nx = size(slice, Axis{:x})
     ny = size(slice, Axis{:y})
@@ -189,14 +195,14 @@ function _compute_total_fluorescences(slice::AxisArray{T1, 2},
 
     for (idx, id) in enumerate(ids)
         # compute and subtract the local bkg equivalent from the total
-        # fluorescence 
+        # fluorescence
         centroid = centroids[idx]
         xidx, yidx = round(Int, centroid[2]), round(Int, centroid[1])
         xrange = max(xidx-win, 1):min(xidx+win, nx)
         yrange = max(yidx-win, 1):min(yidx+win, ny)
         local_signal = view(slice, Axis{:y}(yrange), Axis{:x}(xrange))
         local_labels = view(labels, yrange, xrange)
-        bkg[idx] = _compute_equivalent_background(local_signal, local_labels, id)
+        bkg[idx] = _compute_equivalent_background(local_signal, local_labels, id, dist=dist)
         tf[idx] = sum(slice[labels .== id])
     end
 
