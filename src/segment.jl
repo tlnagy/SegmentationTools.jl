@@ -75,7 +75,7 @@ function build_tp_df(img::AxisArray{T1, 4},
         areas = round.(μm^2, lengths .* pixelarea, sigdigits=4)
         # filter out too large and too small particles
         correct_size = (10μm^2 .< areas .< 500μm^2)
-        ids = unique(component_slice)[correct_size[lengths .> 0]]
+        ids = sort(unique(component_slice))[correct_size]
         centroids = Images.component_centroids(component_slice)[correct_size]
 
         n = length(centroids)
