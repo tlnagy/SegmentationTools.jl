@@ -45,7 +45,7 @@ function segment_cells(img::AxisArray{T, 4},
 end
 
 """
-    build_tp_df(img, thresholds; dist)
+    build_tp_df(img, components; dist)
 
 Build a `DataFrames.DataFrame` that is compatible with trackpys `link_df`
 function. Needs to be converted to a `Pandas.DataFrame` before passing to
@@ -54,29 +54,31 @@ distance away in pixels from each cell to include in its local background
 calculation.
 """
 function build_tp_df(img::AxisArray{T1, 4},
-                     thresholds::AxisArray{T2, 3}; dist=(2, 10)) where {T1, T2 <: Bool}
+                     components::AxisArray{T2, 3}; dist=(2, 10)) where {T1, T2 <: Integer}
 
     xstep = step(AxisArrays.axes(img, Axis{:x}).val)
     ystep = step(AxisArrays.axes(img, Axis{:y}).val)
     (xstep != ystep) && @warn "Different scaling for x and y axes is not supported"
     pixelarea = xstep * ystep
     particles = DataFrames.DataFrame[]
-    # we have to pass the underlying array due to
-    # https://github.com/JuliaImages/ImageMorphology.jl/issues/21
-    components = Images.label_components(thresholds[Axis{:y}(:),
-                                                    Axis{:x}(:),
-                                                    Axis{:time}(:)].data, [1,2])
+
     @showprogress 1 "Computing..." for (idx, timepoint) in enumerate(timeaxis(img))
         component_slice = view(components, :, :, idx)
 
+        # get all ids present in the current slice
+        slice_ids = sort(unique(component_slice))
+        # get the number of pixels for each id in the slice
+        lengths = Images.component_lengths(component_slice)[slice_ids .+ 1]
         # convert boolean area to microns with the assumption that the pixel
         # space is the same in both x and y
-        lengths = Images.component_lengths(component_slice)
         areas = round.(μm^2, lengths .* pixelarea, sigdigits=4)
         # filter out too large and too small particles
         correct_size = (10μm^2 .< areas .< 500μm^2)
-        ids = sort(unique(component_slice))[correct_size]
-        centroids = Images.component_centroids(component_slice)[correct_size]
+
+        ids = slice_ids[correct_size]
+        # get the centroids for all ids and then select only the ids that appear
+        # in the current slice and *also* have the correct size
+        centroids = Images.component_centroids(component_slice)[slice_ids[correct_size] .+ 1]
 
         n = length(centroids)
         ys = map(f->f[1], centroids) # y corresponds to rows
@@ -110,9 +112,18 @@ function build_tp_df(img::AxisArray{T1, 3},
                      thresholds::AxisArray{T2, 3}; dist=(2, 10)) where {T1, T2 <: Bool}
     build_tp_df(AxisArray(reshape(img, size(img)..., 1),
                           AxisArrays.axes(img)..., Axis{:channel}([:slice])),
-                thresholds,
+                thresholds;
                 dist=dist
                )
+end
+
+function build_tp_df(img::AxisArray{T1, 4},
+                     thresholds::AxisArray{T2, 3}; dist=(2, 10)) where {T1, T2 <: Bool}
+
+    # we have to pass the underlying array due to
+    # https://github.com/JuliaImages/ImageMorphology.jl/issues/21
+    components = Images.label_components(thresholds.data, [axisdim(thresholds, Axis{:y}), axisdim(thresholds, Axis{:x})])
+    build_tp_df(img, AxisArray(components, AxisArrays.axes(thresholds)); dist=dist)
 end
 
 """
@@ -128,7 +139,7 @@ end
 """
     _get_locality_mask(cell_mask, foreground; dist=(mindist, maxdist))
 
-    Given a boolean matrix of the pixels belonging to a single cell,
+Given a boolean matrix of the pixels belonging to a single cell,
 `cell_mask`, and a boolean matrix of foreground pixels, `foreground`, this
 function  identifies the local background ring around the cell that is at
 minimum `mindist` away from every cell and a maximum of `maxdist` away from the
@@ -146,7 +157,7 @@ end
 """
     _compute_equivalent_background(slice, labels, id; dist)
 
-    Given a cell `id` and a matrix of labeled cells `labels`, compute the total
+Given a cell `id` and a matrix of labeled cells `labels`, compute the total
 fluorescence expected for an object the size of the cell using the local background
 fluorescence surrounding the cell. The local background is computed from `dist[1]`
 to `dist[2]` away from the cell.
