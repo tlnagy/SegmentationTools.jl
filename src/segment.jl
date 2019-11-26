@@ -1,4 +1,5 @@
 using Images: otsu_threshold, imadjustintensity
+using Unitful
 using Unitful: μm
 using ProgressMeter
 
@@ -69,11 +70,19 @@ function build_tp_df(img::AxisArray{T1, 4},
         slice_ids = sort(unique(component_slice))
         # get the number of pixels for each id in the slice
         lengths = Images.component_lengths(component_slice)[slice_ids .+ 1]
-        # convert boolean area to microns with the assumption that the pixel
-        # space is the same in both x and y
-        areas = round.(μm^2, lengths .* pixelarea, sigdigits=4)
-        # filter out too large and too small particles
-        correct_size = (10μm^2 .< areas .< 500μm^2)
+
+        if eltype(pixelarea) <: Unitful.Area
+            # convert boolean area to microns with the assumption that the pixel
+            # space is the same in both x and y
+            areas = round.(μm^2, lengths .* pixelarea, sigdigits=4)
+            # filter out too large and too small particles
+            correct_size = (10μm^2 .< areas .< 500μm^2)
+        else
+            areas = lengths
+            correct_size = trues(length(lengths))
+            # remove background
+            correct_size[1] = false
+        end
 
         ids = slice_ids[correct_size]
         # get the centroids for all ids and then select only the ids that appear
