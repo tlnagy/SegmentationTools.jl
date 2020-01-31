@@ -135,6 +135,16 @@ function build_tp_df(img::AxisArray{T1, 4},
     build_tp_df(img, AxisArray(components, AxisArrays.axes(thresholds)); dist=dist)
 end
 
+function build_tp_df(img::AxisArray{T1, 3},
+                     thresholds::AxisArray{T2, 3}; dist=(2, 10)) where {T1, T2 <: Integer}
+
+    build_tp_df(AxisArray(reshape(img, size(img)..., 1),
+                          AxisArrays.axes(img)..., Axis{:channel}([:slice])),
+                thresholds;
+                dist=dist
+               )
+end
+
 """
 Given an `img` with at least `y`, `x`, and `t` axes and a 3 dimensional boolean
 array, `thresholds`, in yxt order.
