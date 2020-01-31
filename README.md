@@ -21,7 +21,7 @@ Until this package is registered, the easiest way to install is running the
 following command in the Julia REPL:
 
 ```julia
-] add https://github.com/tlnagy/SegmentationTools.jl.git
+] dev https://github.com/tlnagy/SegmentationTools.jl.git
 ```
 
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
