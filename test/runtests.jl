@@ -85,31 +85,15 @@ end
     # for the third particle verify that the total fluorescence values have the
     # correct amount of background subtracted off, i.e for a background value of
     # `bkg` the final value should be tf - area * bkg
-    @test all(particles[ids .== 3, :normed_tf_slice] .≈ [69/i - 69*bkg for i in 1:5])
+    @test all(particles[ids .== 3, :medbkg_slice] .≈ [bkg for i in 1:5])
 
     # test centroids
     @test particles[1, :x] == centers[5].x
     @test particles[1, :y] == centers[5].y
-
-    # Check warnings
-    wrapped = AxisArray(img, Axis{:y}(0.5μm:0.5μm:50μm), Axis{:x}(1μm:1μm:100μm), Axis{:time}(1:5));
-    @test_logs (:warn, "Different scaling for x and y axes is not supported") SegmentationTools.build_tp_df(wrapped, mask)
 end
 
 @testset "local background calc" begin
-    img = zeros(Gray, 50, 50)
-
-    # create a cell with a background half a bright around it
-    centers = [Point(20, 20), Point(20, 20)]
-    radii = [15, 5]
-    # the local background will be twice as dim as the "cell"
-    colors = [Gray(0.5), Gray(1.0)]
-
-    ImageDraw.draw!(img, [ImageDraw.CirclePointRadius(c, r) for (c,r) in zip(centers, radii)], colors)
-    labels = Images.label_components(img .== 1.0)
-    # the cell should be twice as bright as an equivalent sized background
-    cell_tf = sum(img[img .== 1.0])
-    @test cell_tf/SegmentationTools._compute_equivalent_background(img, labels , 1) == 2.0
+    include("localities.jl")
 end
 
 @testset "Flatfield correction" begin
