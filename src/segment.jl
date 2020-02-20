@@ -218,13 +218,15 @@ function get_localities(labels::AbstractArray{Int, 2}, ids::Vector{Int}; dist=(2
 
     allobjects = labels .> 0
 
+    δ = dist[1] + dist[2]
+
     for id in ids
         # unpack bounding box
         (minx, miny), (maxx, maxy) = boxes[id]
 
         # extend window around bounding box by the max distance
-        xrange = max(minx-dist[2], 1):min(maxx+dist[2], nx)
-        yrange = max(miny-dist[2], 1):min(maxy+dist[2], ny)
+        xrange = max(minx-δ, 1):min(maxx+δ, nx)
+        yrange = max(miny-δ, 1):min(maxy+δ, ny)
 
         local_allobjects = view(allobjects, xrange, yrange)
         local_cellmask = view(labels, xrange, yrange) .== id
