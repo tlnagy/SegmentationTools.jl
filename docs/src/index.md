@@ -83,8 +83,8 @@ SegmentationTools.create_cell_grid
 #### Observing cell localities
 
 For low signal-to-noise applications, it can be useful to compute the local
-background to normalize against. The nonexported function,
-[`SegmentationTools._get_locality_mask`](@ref), can be used to display the
+background to normalize against. The exported function,
+[`SegmentationTools.get_localities`](@ref), can be used to display the
 localities used in [`SegmentationTools.build_tp_df`](@ref) to diagnose any weird
 behaviors.
 
@@ -92,15 +92,21 @@ behaviors.
 ```@example
 using FileIO, Images, SegmentationTools
 slice = FileIO.load("https://user-images.githubusercontent.com/1661487/64392405-81a30500-d001-11e9-8262-744f76ff2f69.png")
-components = label_components(Bool.(slice))
-foreground = components .> 0.0
+labels = label_components(Bool.(slice))
+foreground = labels .> 0.0
+
 locals = Array{RGB{Float64}, 2}[]
+
 gold = RGB((255,215,0)./255...)
 orchid = RGB((186,85,211)./255...)
-for i in 1:maximum(components)
-    mask = components .== i
+
+ids = sort(unique(labels))[2:end]
+localities = SegmentationTools.get_localities(labels, ids, dist=(10, 60))
+
+for id in ids
+    mask = labels .== id
     result = RGB(0.5, 0.5, 0.5) .* foreground
-    result .+= gold .* (Float64.(SegmentationTools._get_locality_mask(mask, foreground, dist=(10, 60))))
+    result[localities[id]] .= gold
     result[mask] .= orchid
     push!(locals, result)
 end
@@ -108,7 +114,7 @@ reshape(locals, (:, 6))
 ```
 
 ```@docs
-SegmentationTools._get_locality_mask
+SegmentationTools.get_localities
 ```
 
 ## Miscellaneous

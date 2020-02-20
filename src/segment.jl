@@ -1,6 +1,7 @@
 using Images: otsu_threshold, imadjustintensity
 using Unitful
 using Unitful: μm
+using OffsetArrays
 using ProgressMeter
 
 """
@@ -97,20 +98,32 @@ function build_tp_df(img::AxisArray{T1, 4},
         # select the current time slice and enforce storage order to match
         # components
         slice = view(img, Axis{:y}(:), Axis{:x}(:), Axis{:channel}(:), Axis{:time}(timepoint))
-        tf, bkg = _compute_total_fluorescences(slice, ids, component_slice, centroids, dist=dist)
-
+        localities = get_localities(component_slice, ids, dist=dist)
         # dictionary of ids to areas
-        data = Dict(:x=>xs,
-                    :y=>ys,
-                    :frame=>frames,
-                    :id=>ids,
-                    :area=>areas[correct_size])
+        data = OrderedDict(:x=>xs,
+                           :y=>ys,
+                           :frame=>frames,
+                           :id=>ids,
+                           :area=>areas[correct_size])
 
         cax = AxisArrays.axes(img, Axis{:channel})
-        for c in 1:size(tf, 2)
-            data[Symbol("tf_", cax[c])] = tf[:, c]
-            data[Symbol("bkg_", cax[c])] = bkg[:, c]
-            data[Symbol("normed_tf_", cax[c])] = tf[:, c] .- bkg[:, c]
+        for c in cax
+            channelslice = view(slice, Axis{:channel}(c))
+            tfs = Float64[]
+            medbkgs = Float64[]
+
+            for (id, indices) in localities
+                # total fluorescence is the sum of all signal in the actual
+                # footprint of the object. We have to do a copy operation here
+                # due to https://github.com/JuliaArrays/AxisArrays.jl/issues/179
+                push!(tfs, sum(channelslice[component_slice .== id]))
+
+                # median background is the median of background signal in the
+                # locality of object
+                push!(medbkgs, median(channelslice[indices]))
+            end
+            data[Symbol("tf_", c)] = tfs
+            data[Symbol("medbkg_", c)] = medbkgs
         end
         push!(particles, DataFrames.DataFrame(data))
     end
@@ -156,85 +169,74 @@ function build_tp_df(img::AxisArray{T1, 4},
 end
 
 """
-    _get_locality_mask(cell_mask, foreground; dist=(mindist, maxdist))
+    get_locality(foreground, cell_mask; dist=(mindist, maxdist))
 
 Given a boolean matrix of the pixels belonging to a single cell,
 `cell_mask`, and a boolean matrix of foreground pixels, `foreground`, this
 function  identifies the local background ring around the cell that is at
-minimum `mindist` away from every cell and a maximum of `maxdist` away from the
-target cell.
+minimum `mindist` away from every object (in pixels) and a maximum of `maxdist`
+away from the target cell.
 """
-function _get_locality_mask(cell_mask::BitArray{2}, foreground::BitArray{2}; dist=(1,6))
+function get_locality(foreground::AbstractArray{Bool, 2}, cellmask::AbstractArray{Bool, 2}; dist=(2, 10))
     all_localities = dist[1] .< distance_transform(feature_transform(foreground)) .< dist[2]
-    # create a 5px wide mask that is at least 1 px away from the cell
-    locality = dist[1] .< distance_transform(feature_transform(cell_mask)) .< dist[2]
-    # only return true where this cells locality overlaps with all local areas
+    locality = dist[1] .< distance_transform(feature_transform(cellmask)) .< dist[2]
+    # only return true where this cells locality overlaps with other localities, this way we
+    # insure that only foreground areas are counted in the locality
     locality .&= all_localities
 end
 
-
 """
-    _compute_equivalent_background(slice, labels, id; dist)
+    get_localities(labels, ids; dist) -> Dict
 
-Given a cell `id` and a matrix of labeled cells `labels`, compute the total
-fluorescence expected for an object the size of the cell using the local background
-fluorescence surrounding the cell. The local background is computed from `dist[1]`
-to `dist[2]` away from the cell.
+Gets the local background areas given the output of `label_components` and a
+list of objects whose areas should be found defined by `ids`. The local
+background is defined as a ring around the object that is at
+minimum `mindist` away from every object (in pixels) and a maximum of `maxdist`
+away from the target object. The result is a dictionary mapping the object id to
+all indices in its local background.
+
+!!! warning
+    It's really important that `labels` has all foreground objects labeled
+    because otherwise they might inadvertently be included in an object's
+    locality.
 """
-function _compute_equivalent_background(slice::AbstractArray{T, 2},
-                                       labels::AbstractArray{Int, 2},
-                                       id::Int;
-                                       dist=(2, 10)) where {T}
-    foreground = labels .!= 0.0
-    component_mask = labels .== id
-    locality_mask = _get_locality_mask(component_mask, foreground; dist=dist)
-    local_bkg = locality_mask .* slice
-    # fluorescence of an equivalent background area
-    median(local_bkg[locality_mask]) * count(component_mask)
-end
+function get_localities(labels::AbstractArray{Int, 2}, ids::Vector{Int}; dist=(2, 10))
+    boxes = component_boxes(labels)
+    # boxes always contains the background label as well, while there's no guarantee
+    # that ids does as well
+    (!(0 in ids)) && deleteat!(boxes, 1)
 
-function _compute_total_fluorescences(slice::AxisArray{T1, 3},
-                                      ids::Vector{Int},
-                                      labels::AbstractArray{Int, 2},
-                                      centroids::AbstractArray{Tuple{Float64, Float64}};
-                                      dist=(2, 10)) where {T1}
-    n = length(centroids)
-    nₛ = size(slice, Axis{:channel})
-    tf = fill(0.0, n, nₛ)
-    bkg = fill(0.0, n, nₛ)
-    for c in 1:nₛ
-        signal = view(slice, Axis{:channel}(c))
-        _tf, _bkg = _compute_total_fluorescences(signal, ids, labels, centroids, dist=dist)
-        tf[:, c] .= _tf
-        bkg[:, c] .= _bkg
-    end
-    tf, bkg
-end
-
-function _compute_total_fluorescences(slice::AxisArray{T1, 2},
-                                      ids::Vector{Int},
-                                      labels::AbstractArray{Int, 2},
-                                      centroids::AbstractArray{Tuple{Float64, Float64}};
-                                      dist=(2, 10)) where {T1}
-    n = length(centroids)
-    nx = size(slice, Axis{:x})
-    ny = size(slice, Axis{:y})
-    win = 50
-    tf = fill(0.0, n)
-    bkg = fill(0.0, n)
-
-    for (idx, id) in enumerate(ids)
-        # compute and subtract the local bkg equivalent from the total
-        # fluorescence
-        centroid = centroids[idx]
-        xidx, yidx = round(Int, centroid[2]), round(Int, centroid[1])
-        xrange = max(xidx-win, 1):min(xidx+win, nx)
-        yrange = max(yidx-win, 1):min(yidx+win, ny)
-        local_signal = view(slice, Axis{:y}(yrange), Axis{:x}(xrange))
-        local_labels = view(labels, yrange, xrange)
-        bkg[idx] = _compute_equivalent_background(local_signal, local_labels, id, dist=dist)
-        tf[idx] = sum(slice[labels .== id])
+    # if we detect gaps in the numbering it's probably because some labels were
+    # removed, which can make our foreground detection incorrect
+    computed_ids = sort(unique(labels))[2:end]
+    if computed_ids != collect(minimum(computed_ids):maximum(computed_ids))
+        @warn "Do not remove values from `labels`, only from `ids`. Calc might be wrong!"
     end
 
-    tf, bkg
+    nx, ny = size(labels)
+    localities = OrderedDict{Int, Vector{CartesianIndex{2}}}()
+
+    allobjects = labels .> 0
+
+    δ = dist[1] + dist[2]
+
+    for id in ids
+        # unpack bounding box
+        (minx, miny), (maxx, maxy) = boxes[id]
+
+        # extend window around bounding box by the max distance
+        xrange = max(minx-δ, 1):min(maxx+δ, nx)
+        yrange = max(miny-δ, 1):min(maxy+δ, ny)
+
+        local_allobjects = view(allobjects, xrange, yrange)
+        local_cellmask = view(labels, xrange, yrange) .== id
+        @assert sum(local_cellmask) > 0 "No object of $id found"
+
+        locality = get_locality(local_allobjects, local_cellmask; dist=dist)
+
+        # use offset arrays to return CartesianIndices in the original image coordinates
+        localities[id] = findall(OffsetArray(locality, xrange, yrange))
+    end
+
+    localities
 end
