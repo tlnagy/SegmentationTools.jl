@@ -208,8 +208,8 @@ function get_localities(labels::AbstractArray{Int, 2}, ids::Vector{Int}; dist=(2
 
     # if we detect gaps in the numbering it's probably because some labels were
     # removed, which can make our foreground detection incorrect
-    nonzero = x->!iszero(x)
-    if labels[findlast(nonzero, labels)] - labels[findfirst(nonzero, labels)] + 1 !== length(unique(labels)) - 1
+    computed_ids = sort(unique(labels))[2:end]
+    if computed_ids != collect(minimum(computed_ids):maximum(computed_ids))
         @warn "Do not remove values from `labels`, only from `ids`. Calc might be wrong!"
     end
 
